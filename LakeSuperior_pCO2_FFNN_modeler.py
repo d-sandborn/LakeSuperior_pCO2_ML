@@ -72,12 +72,9 @@ def parallel_predictor(i, j):  # , model, scaler, da):
         np.array(
             [
                 ds.temp.sel(x=i, y=j).values,
-                # ds.atmpco.values,
-                # np.ones(len(ds.atmpco.values)) * ds.depth.sel(x=i, y=j).values,
                 ds.light.sel(x=i, y=j).values,
                 ds.primprod.sel(x=i, y=j).values,
                 ds.airsp.sel(x=i, y=j).values,
-                # ds.doy.values,
             ]
         ).T
     )
@@ -94,16 +91,8 @@ def parallel_predictor(i, j):  # , model, scaler, da):
 
 def BH_model_construction():
     BH_grouped = pd.read_csv("BH1923_Processed_Rad.csv")
-    BH_grouped = BH_grouped[BH_grouped.sal < 0.06]
-    BH_grouped = BH_grouped[BH_grouped.pCO2atm > 200]
-    # BH_grouped = BH_grouped[BH_grouped.pCO2 < 750]
     BH_grouped["latish"] = round(BH_grouped["lat"], 3)
     BH_grouped["lonish"] = round(BH_grouped["lon"], 3)
-
-    # Candidate Drivers
-    # BH_grouped["sinDOY"] = np.sin((BH_grouped.DOY + 210) * 2 * np.pi / 365.25)
-    # BH_grouped["lncoast"] = np.log(BH_grouped.coast)
-    # BH_grouped["lndepth"] = np.log(BH_grouped.depth)
     BH_grouped["wind"] = BH_grouped["TrueWind-SPEED"] / 1.94384  # kts to m/s
     BH_grouped["production"] = np.nan
 
@@ -123,7 +112,6 @@ def BH_model_construction():
         rad=("rad", "mean"),
         wind=("wind", "mean"),
         sal=("sal", "mean"),
-        # coast = ("coast", "mean")
     )
 
     BH_grouped.reset_index(inplace=True)
@@ -138,26 +126,16 @@ def BH_model_construction():
     # DOY sensitivity analysis
     BH_grouped = BH_grouped.loc[BH_grouped.doy > 121].loc[BH_grouped.doy < 275]
 
-    ###########
     BH_grouped.to_csv("BH_post_model.csv")
 
     # Prepare
     prediction_parameters = [
         "Temp",
-        # "pCO2atm",
-        # "depth",
-        # "coast",
         "rad",
         "production",
         "wind",
-        # "doy",
     ]
 
-    # sns.pairplot(
-    #    data=BH_grouped[prediction_parameters],
-    #    corner=True,
-    #    plot_kws={"edgecolor": None, "alpha": 0.005},
-    # )
     # drop missing cases
     BH_grouped = BH_grouped.dropna(subset=["pCO2"])
     BH_grouped = BH_grouped.dropna(subset=prediction_parameters)
@@ -238,7 +216,6 @@ def BH_model_construction():
         if name == "mean_squared_error":
             print("mean_error ", np.sqrt(value))
 
-    # pickle.dump(model, open("BHUW_FFNN_model.sav", "wb"))
     print("Test score:", score)
 
     # Prediction
@@ -248,9 +225,7 @@ def BH_model_construction():
     sns.set(rc={"figure.figsize": (4, 4)})
     sns.set_style("ticks")
     sns.despine()
-    # sns.jointplot(
-    #    x=y_test, y=y_pred, s=10, kind = 'kde',color="r",shade=True,# alpha=0.2, linewidth=0
-    # )
+    
     fig = sns.jointplot(
         x=y_test, y=y_pred, s=1, color="k", alpha=0.7, linewidth=0
     )
@@ -394,47 +369,16 @@ if __name__ == "__main__":
     print("Starting prediction for input fields using multiprocessing.")
     cores = 8  # os.cpu_count()
     print(str(cores) + " cores in use.")
-    # with multiprocessing.Pool(cores) as p:
-    #    args = [
-    #        (i, j, model, scaler, ds) for i in ds.x.values for j in ds.y.values
-    #    ]
-    #    p.starmap(parallel_predictor, args)
+    
     Parallel(n_jobs=cores, prefer="threads")(
         delayed(parallel_predictor)(i, j)  # , model, scaler, ds)
         for i in ds.x.values
         for j in ds.y.values
     )
 
-    # for i in ds.x.values:
-    #    for j in ds.y.values:
-    #        parallel_predictor(i, j, model, scaler, ds)
+   
     print("Finished prediction.")
-    """
-    xr.apply_ufunc(
-        ufunc_predictor,
-        ds.temp,
-        ds.atmpco,
-        ds.depth,
-        ds.light,
-        ds.primprod,
-        ds.airsp,
-        model,
-        scaler,
-    )
-    
-    # ds.to_netcdf("regression_output_noflux.nc", mode="w")
-    ds["flux"] = (
-        ("time", "y", "x"),
-        xr.apply_ufunc(
-            flux_calc,
-            ds.pco.T.values,
-            ds.atmpco.values,
-            ds.airsp.values,
-            ds.temp.values,
-            0.045,
-        ),
-    )
-    """
+
     ds, total_annual_flux = pyflux_calc(ds, ice_corr=True)  # GgC/year
     print("Total Annual Flux: " + str(total_annual_flux) + "TgC/yr")
 
@@ -443,9 +387,8 @@ if __name__ == "__main__":
     print("Producing and saving plot of pCO2 at time = 0.")
     try:
         t0plot = ds["pco"].isel(time=0).plot()
-        # point_plot = da["pred_pCO2"].isel(nx=5, ny=5).plot()
         t0plot.savefig("t0plot.png")
-        # point_plot.savefig("point_plot.png")
+
     except:
         print("Plotting is broken.")
     print("Script completed.")
