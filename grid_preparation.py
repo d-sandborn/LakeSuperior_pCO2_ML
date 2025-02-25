@@ -53,10 +53,10 @@ def doy(Y, M, D):
 
 # %% Import files
 
-glsea = xr.open_mfdataset("./glsea/20*_sst.nc")["sst"]  # light
-glsea_ice = xr.open_mfdataset("./glsea/20*_ice.nc")["ice_concentration"]  # ice
-bath = xr.open_dataset("superior_lld.grd")  # depth/mask
-pfw_df = pd.read_csv("pfw_lowess.csv")  # atm CO2
+glsea = xr.open_mfdataset("./glsea/20*_sst.nc")["sst"]  # SST from Great Lakes Environmental Surface Analysis
+glsea_ice = xr.open_mfdataset("./glsea/20*_ice.nc")["ice_concentration"]  # Ice coverage from Great Lakes Environmental Surface Analysis
+bath = xr.open_dataset("superior_lld.grd")  # Bathymetry and mask from NOAA
+pfw_df = pd.read_csv("pfw_lowess.csv")  # Atmospheric CO2 from PFW/WLEF tall tower
 
 # light https://psl.noaa.gov/data/gridded/data.narr.html
 ds19 = xr.open_dataset("./Data/dswrf.2019.nc")["dswrf"]
@@ -69,7 +69,7 @@ ds_rad = xr.concat(ds_list, dim="time")
 for file in ds_list:
     file.close()
 
-
+# u10 wind, also from NARR (see above)
 uw19 = xr.open_dataset("./Data/uwnd.10m.2019.nc")["uwnd"]
 uw20 = xr.open_dataset("./Data/uwnd.10m.2020.nc")["uwnd"]
 uw21 = xr.open_dataset("./Data/uwnd.10m.2021.nc")["uwnd"]
@@ -197,12 +197,6 @@ time = pd.date_range(
 )  # 1D time with daily res.
 reference_time = pd.Timestamp("2006-01-01")
 
-# don't know why we're cutting and interpolating swr twice?
-# ds_rad = ds_rad.sel(
-#    lat=slice(min_lat, max_lat), lon=slice(180 - min_lon, 180 - max_lon)
-# )
-# ds_rad = ds_rad.interp(lon=180 - lons_vector).interp(lat=lats_vector)
-
 print("Prepared bathymetry and model bounds.")
 # %% atmpCO2
 atmpcotwos = np.empty(len(time))
@@ -287,13 +281,13 @@ ds.to_netcdf("bhuw_input.nc")
 print("Saved BHUWII input file.")
 
 
-# %% UW Prep
-
+# %% underway data prep
+#grab Blue Heron underway data file
 BH = pd.read_csv("BH1923_Processed.csv")
 
 BH["rad"] = np.nan
 
-for i in BH.index:
+for i in BH.index: #tack on matching PAR as above
     this_lon = BH.loc[i, "lon"]
     this_lat = BH.loc[i, "lat"]
     this_datetime = BH.loc[i, "Date"]
@@ -305,76 +299,3 @@ for i in BH.index:
     BH.loc[i, "rad"] = this_rad
 
 BH.to_csv("BH1923_Processed_Rad.csv", index=False)
-
-# %% Old Code
-print("Old code follows:")
-"""
-
-print("Beginning GLSEA input.")
-ds_poms = xr.open_mfdataset("./fields/s.lsofs.fields.nowcast.*.nc")
-# ds_poms.interp(lon=180 - lons_vector).interp(lat=lats_vector)
-
-ds_newpoms = xr.Dataset(
-    data_vars=dict(
-        temp=(["time", "y", "x"], ds_poms.temp[:, 0, :, :].values),
-        air_u=(["time", "y", "x"], ds_poms.air_u[:, :, :].values),
-        air_v=(["time", "y", "x"], ds_poms.air_v[:, :, :].values),
-        mask=(
-            ["y", "x"],
-            xr.where(ds_poms["depth"] > 0, 1, 0)[0, :, :].values,
-        ),
-    ),
-    coords=dict(
-        lon=(["y", "x"], ds_poms.lon.values[0, :, :]),
-        lat=(["y", "x"], ds_poms.lat.values[0, :, :]),
-        time=ds_poms.time.values,
-        reference_time=reference_time,
-    ),
-)
-ds_newpoms["temp"][0, :, :].plot(cmap=cmocean.cm.thermal)
-dr = ds_newpoms.temp
-ds_shape_out = xr.Dataset(
-    {
-        "lat": (["lat"], lats_vector, {"units": "degrees_north"}),
-        "lon": (["lon"], lons_vector, {"units": "degrees_east"}),
-        "mask": (["lat", "lon"], mask.values),
-    }
-)
-regridder = xe.Regridder(
-    ds_newpoms, ds_shape_out, "bilinear", extrap_method="inverse_dist"
-)
-temp_newpoms_out = regridder(dr)
-temp_newpoms_out[1, :, :].plot(cmap=cmocean.cm.thermal)
-
-ds_newpoms["air_u"][0, :, :].plot(cmap=cmocean.cm.thermal)
-dr = ds_newpoms.air_u
-ds_shape_out = xr.Dataset(
-    {
-        "lat": (["lat"], lats_vector, {"units": "degrees_north"}),
-        "lon": (["lon"], lons_vector, {"units": "degrees_east"}),
-        "mask": (["lat", "lon"], mask.values),
-    }
-)
-regridder = xe.Regridder(
-    ds_newpoms, ds_shape_out, "bilinear", extrap_method="inverse_dist"
-)
-air_u_newpoms_out = regridder(dr)
-air_u_newpoms_out[1, :, :].plot(cmap=cmocean.cm.thermal)
-
-ds_newpoms["air_v"][0, :, :].plot(cmap=cmocean.cm.thermal)
-dr = ds_newpoms.air_v
-ds_shape_out = xr.Dataset(
-    {
-        "lat": (["lat"], lats_vector, {"units": "degrees_north"}),
-        "lon": (["lon"], lons_vector, {"units": "degrees_east"}),
-        "mask": (["lat", "lon"], mask.values),
-    }
-)
-regridder = xe.Regridder(
-    ds_newpoms, ds_shape_out, "bilinear", extrap_method="inverse_dist"
-)
-air_v_newpoms_out = regridder(dr)
-air_v_newpoms_out[1, :, :].plot(cmap=cmocean.cm.thermal)
-print("Prepared SST from GLSEA.")
-
-"""
